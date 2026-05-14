@@ -174,6 +174,16 @@ class AuthController {
                 'web',
             ]);
 
+            // Cancel any open death verifications — the user is clearly alive.
+            // (The DB trigger trg_checkin_update_user also does this, but we
+            // run it from PHP too so older installations without migration 004
+            // still behave correctly.)
+            $pdo->prepare("
+                UPDATE death_verifications
+                SET status = 'cancelled', cancelled_at = NOW()
+                WHERE user_id = ? AND status IN ('initiated','awaiting_quorum')
+            ")->execute([$user['user_id']]);
+
             $isAdmin = (int)($user['is_admin'] ?? 0);
             $token = JWTMiddleware::generateToken([
                 'user_id' => $user['user_id'],

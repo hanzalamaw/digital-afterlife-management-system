@@ -46,7 +46,7 @@ const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', iconDefault: dashboardIcon, iconActive: dashboardActiveIcon, path: '/dashboard' },
   { id: 'new-assets', label: 'New Assets', iconDefault: newAssetsIcon, iconActive: newAssetsActiveIcon, path: '/assets/new' },
   { id: 'manage-assets', label: 'Manage Assets', iconDefault: manageAssetsIcon, iconActive: manageAssetsActiveIcon, path: '/assets/manage' },
-  { id: 'contacts', label: 'Manage Trusted Contacts', iconDefault: contactsIcon, iconActive: contactsActiveIcon, path: '/contacts/manage' },
+  { id: 'contacts', label: 'Manage Death Rules', iconDefault: contactsIcon, iconActive: contactsActiveIcon, path: '/contacts/manage' },
 ];
 
 const SIDEBAR_EXPANDED_KEY = 'dams_sidebar_expanded';

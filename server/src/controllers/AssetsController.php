@@ -3,6 +3,7 @@ namespace DAMS\Controllers;
 
 use DAMS\Config\Database;
 use DAMS\Middleware\JWTMiddleware;
+use DAMS\Utils\Crypto;
 use DAMS\Utils\Http;
 use Throwable;
 
@@ -14,10 +15,12 @@ class AssetsController {
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare('
             SELECT asset_id, asset_name, asset_type, description, instructions,
-                   require_contact_verify, status, include_in_estate, created_at, updated_at
-            FROM digital_assets
+                   require_contact_verify, status, include_in_estate,
+                   beneficiary_count, share_total, vault_count,
+                   created_at, updated_at
+            FROM asset_summary
             WHERE user_id = ?
-            ORDER BY updated_at DESC
+            ORDER BY asset_id ASC
         ');
         $stmt->execute([$userId]);
         Http::json(['assets' => $stmt->fetchAll()]);
@@ -49,6 +52,25 @@ class AssetsController {
         $vaultEntries = is_array($data['vault_entries'] ?? null) ? $data['vault_entries'] : [];
         $beneficiaries = is_array($data['beneficiaries'] ?? null) ? $data['beneficiaries'] : [];
 
+        // Validate beneficiary shares add up to 100 before doing any inserts.
+        if (!empty($beneficiaries)) {
+            $shareTotal = 0.0;
+            $hasAny = false;
+            foreach ($beneficiaries as $b) {
+                $name = trim((string)($b['full_name'] ?? ''));
+                $email = trim((string)($b['email'] ?? ''));
+                if ($name === '' || $email === '') {
+                    continue;
+                }
+                $hasAny = true;
+                $shareTotal += (float)($b['share_percentage'] ?? 0);
+            }
+            if ($hasAny && abs($shareTotal - 100.0) > 0.01) {
+                Http::json(['error' => 'Beneficiary shares must total exactly 100%.'], 400);
+                return;
+            }
+        }
+
         $pdo = Database::getConnection();
         try {
             $pdo->beginTransaction();
@@ -63,36 +85,28 @@ class AssetsController {
 
             if (!empty($vaultEntries)) {
                 $vaultStmt = $pdo->prepare('
-                    INSERT INTO vault_entries (asset_id, field_name, encrypted_value, iv)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO vault_entries (asset_id, field_name, encrypted_value, iv, encryption_algo)
+                    VALUES (?, ?, ?, ?, ?)
                 ');
                 foreach ($vaultEntries as $entry) {
                     $fieldName = trim((string)($entry['field_name'] ?? ''));
-                    $encrypted = trim((string)($entry['encrypted_value'] ?? ''));
-                    $iv = trim((string)($entry['iv'] ?? ''));
-                    if ($fieldName === '' || $encrypted === '' || $iv === '') {
+                    $rawValue  = (string)($entry['encrypted_value'] ?? '');
+                    if ($fieldName === '' || $rawValue === '') {
                         continue;
                     }
-                    $vaultStmt->execute([$assetId, $fieldName, $encrypted, $iv]);
+                    // IV is generated server-side; raw value is encrypted with AES-256-CBC.
+                    $enc = Crypto::encrypt($rawValue);
+                    $vaultStmt->execute([
+                        $assetId,
+                        $fieldName,
+                        $enc['ciphertext'],
+                        $enc['iv'],
+                        'AES-256-CBC',
+                    ]);
                 }
             }
 
             if (!empty($beneficiaries)) {
-                $shareTotal = 0.0;
-                foreach ($beneficiaries as $b) {
-                    $name = trim((string)($b['full_name'] ?? ''));
-                    $email = trim((string)($b['email'] ?? ''));
-                    if ($name === '' || $email === '') {
-                        continue;
-                    }
-                    $shareTotal += (float)($b['share_percentage'] ?? 0);
-                }
-                if ($shareTotal > 0 && abs($shareTotal - 100.0) > 0.01) {
-                    $pdo->rollBack();
-                    Http::json(['error' => 'Beneficiary shares must total 100'], 400);
-                    return;
-                }
-
                 $findBeneficiary = $pdo->prepare('SELECT beneficiary_id FROM beneficiaries WHERE email = ? LIMIT 1');
                 $createBeneficiary = $pdo->prepare('
                     INSERT INTO beneficiaries (full_name, email, phone, relationship, verification_status)
@@ -274,4 +288,3 @@ class AssetsController {
         Http::json(['message' => 'Asset deleted']);
     }
 }
-
