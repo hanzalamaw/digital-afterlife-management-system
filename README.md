@@ -1,7 +1,4 @@
 <div align="center">
-
-<img src="client/src/assets/hero.png" alt="DAMS — Digital Afterlife Management System" width="720" />
-
 <br />
 
 # Digital Afterlife Management System
